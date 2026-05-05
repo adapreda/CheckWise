@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .fact_checking_agent import FactCheckingResult, fact_check_text #nu stiu daca e bine
+
 import logging
 from typing import Any, Literal
 
@@ -117,6 +119,7 @@ class TextVerificationResponse(BaseModel):
     highlights: list[HighlightResponse]
     metrics: TextAnalysisMetricsResponse
     grammatical_result: GrammaticalResultResponse
+    fact_checking_result: dict[str, Any]    #adaugat
 
 
 class HistoryEntry(BaseModel):
@@ -151,6 +154,14 @@ def startup_event() -> None:
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+@app.post("/api/fact-check", response_model=FactCheckingResult)   #nu stiu daca e bine
+def fact_check(payload: TextVerificationRequest) -> FactCheckingResult:
+    try:
+        return fact_check_text(payload.text)
+    except Exception as exc:
+        logger.exception("Fact-checking failed for text_length=%s", len(payload.text))
+        raise HTTPException(status_code=500, detail=f"Fact-checking failed: {exc}") from exc
 
 
 @app.post("/api/text/verify", response_model=TextVerificationResponse)

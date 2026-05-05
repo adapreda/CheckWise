@@ -23,6 +23,11 @@ const formatGrammaticalVerdictLabel = (result: TextVerificationResponse) =>
     ? `${clampPercentage(result.grammatical_result.score)}% likely AI-written`
     : `${clampPercentage(100 - result.grammatical_result.score)}% likely human-written`;
 
+const formatFactCheckingScore = (score: number) => `${clampPercentage(score)}%`;
+
+const formatFactCheckingVerdictLabel = (score: number) =>
+  `${clampPercentage(score)}% factual trust`;
+
 interface GrammaticalSignalSpan {
   start: number;
   end: number;
@@ -220,6 +225,7 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
     ? formatGrammaticalVerdictLabel(textVerificationMutation.data)
     : null;
   const grammaticalResult = textVerificationMutation.data?.grammatical_result ?? null;
+  const factCheckingResult = textVerificationMutation.data?.fact_checking_result ?? null;
   const grammaticalHighlightedText = useMemo(() => {
     if (!grammaticalResult) {
       return null;
@@ -421,6 +427,81 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
     </div>
   ) : null;
 
+  const factCheckingAgentModalContent = factCheckingResult ? (
+    <div className="max-w-full space-y-4 overflow-x-hidden whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word]">
+      <div className="max-w-full overflow-x-hidden rounded-lg border border-border bg-background/40 p-4">
+        <h2 className="mb-2 text-base font-semibold text-foreground">Fact-Checking Verification Result</h2>
+        <p className="text-sm text-muted-foreground">
+          Result: <span className="font-semibold text-foreground">{formatFactCheckingVerdictLabel(factCheckingResult.overall_trust_score)}</span>
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Lower factual trust can increase AI suspicion.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Confidence: <span className="font-semibold text-foreground">{formatFactCheckingScore(factCheckingResult.overall_confidence_score)}</span>
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Claims checked: <span className="font-semibold text-foreground">{factCheckingResult.total_claims}</span>
+        </p>
+      </div>
+
+      {factCheckingResult.claims.length > 0 ? (
+        <div className="space-y-3">
+          {factCheckingResult.claims.map((claim, index) => (
+            <div key={`${claim.claim}-${index}`} className="max-w-full overflow-x-hidden rounded-lg border border-border bg-background/40 p-4">
+              <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="whitespace-normal break-words text-sm font-semibold text-foreground [overflow-wrap:anywhere] [word-break:break-word]">{claim.claim}</h3>
+                  <p className="mt-1 whitespace-normal break-words text-xs text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">{claim.type.replaceAll("_", " ")}</p>
+                </div>
+                <span className="w-fit rounded-md border border-border px-2 py-1 text-xs font-semibold text-foreground">
+                  {claim.verdict.replaceAll("_", " ")}
+                </span>
+              </div>
+
+              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                <p>
+                  Claim score: <span className="font-semibold text-foreground">{formatFactCheckingScore(claim.claim_score)}</span>
+                </p>
+                <p>
+                  Confidence: <span className="font-semibold text-foreground">{formatFactCheckingScore(claim.confidence_score)}</span>
+                </p>
+              </div>
+
+              <p className="mt-3 whitespace-normal break-words text-sm leading-7 text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">{claim.explanation}</p>
+
+              {claim.sources.length > 0 && (
+                <div className="mt-4 max-w-full space-y-2 overflow-x-hidden">
+                  <h4 className="text-sm font-semibold text-foreground">Sources</h4>
+                  {claim.sources.map((source, sourceIndex) => (
+                    <div key={`${source.url}-${sourceIndex}`} className="max-w-full overflow-x-hidden rounded-md border border-border bg-background/40 p-3">
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block max-w-full whitespace-normal break-words text-sm font-semibold text-foreground [overflow-wrap:anywhere] [word-break:break-word] hover:text-primary"
+                      >
+                        {source.title}
+                      </a>
+                      <p className="mt-1 max-w-full whitespace-normal break-words text-xs text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">
+                        Credibility: {source.credibility_score.toFixed(2)}
+                      </p>
+                      <p className="mt-2 max-w-full whitespace-normal break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">{source.snippet}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-background/40 p-4">
+          <p className="text-sm text-muted-foreground">No factual claims were found for fact-checking.</p>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -549,7 +630,9 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
                   ? statisticalAgentModalContent
                   : agent.id === "grammatical"
                     ? grammaticalAgentModalContent
-                    : undefined
+                    : agent.id === "factcheck"
+                      ? factCheckingAgentModalContent
+                      : undefined
               }
             />
           ))}
@@ -592,6 +675,21 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     Open the <span className="font-semibold text-foreground">Grammatical Agent</span> card above to view the full analysis details.
+                  </p>
+                </div>
+              )}
+
+              {factCheckingResult && (
+                <div className="rounded-lg border border-border bg-card p-5">
+                  <h2 className="mb-2 text-lg font-semibold">Fact-Checking Verification Result</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Result: <span className="font-semibold text-foreground">{formatFactCheckingVerdictLabel(factCheckingResult.overall_trust_score)}</span>
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Lower factual trust can increase AI suspicion.
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Open the <span className="font-semibold text-foreground">Fact-Checking Agent</span> card above to view checked claims and sources.
                   </p>
                 </div>
               )}

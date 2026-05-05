@@ -75,6 +75,32 @@ export interface GrammaticalResult {
   lowered_confidence_reasons: string[];
 }
 
+export interface SourceEvidence {
+  title: string;
+  url: string;
+  credibility_score: number;
+  snippet: string;
+}
+
+export interface FactCheckedClaim {
+  claim: string;
+  type: string;
+  queries: string[];
+  verdict: "VERIFIED" | "LIKELY_TRUE" | "CONTRADICTED" | "OUTDATED" | "UNVERIFIABLE";
+  claim_score: number;
+  confidence_score: number;
+  sources: SourceEvidence[];
+  explanation: string;
+}
+
+export interface FactCheckingResult {
+  agent: "fact_checking";
+  overall_trust_score: number;
+  overall_confidence_score: number;
+  total_claims: number;
+  claims: FactCheckedClaim[];
+}
+
 export interface TextVerificationResponse {
   title: string;
   verification_title: string;
@@ -96,6 +122,7 @@ export interface TextVerificationResponse {
   highlights: Highlight[];
   metrics: TextAnalysisMetrics;
   grammatical_result: GrammaticalResult;
+  fact_checking_result?: FactCheckingResult | null;
 }
 
 export interface HistoryEntry {

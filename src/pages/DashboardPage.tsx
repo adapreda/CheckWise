@@ -24,6 +24,15 @@ const formatGrammaticalHistoryScore = (item: HistoryEntry) => {
   return `${clampPercentage(displayedScore)}% ${displayedLabel} (${grammaticalResult.confidence})`;
 };
 
+const formatFactCheckingHistoryScore = (item: HistoryEntry) => {
+  const factCheckingResult = item.structured_result?.fact_checking_result;
+  if (!factCheckingResult) {
+    return "-";
+  }
+
+  return `${clampPercentage(factCheckingResult.overall_trust_score)}% factual trust`;
+};
+
 const DashboardPage = ({ userEmail }: DashboardPageProps) => {
   const historyQuery = useQuery({
     queryKey: ["history", userEmail],
@@ -81,34 +90,35 @@ const DashboardPage = ({ userEmail }: DashboardPageProps) => {
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Rating</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Statistical Agent</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Grammatical Agent</th>
+                  <th className="px-4 py-3 text-left font-medium text-muted-foreground">Fact-Checking Agent</th>
                   <th className="px-4 py-3 text-left font-medium text-muted-foreground">Timestamp</th>
                 </tr>
               </thead>
               <tbody>
                 {!userEmail && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
                       Sign in to view your search history.
                     </td>
                   </tr>
                 )}
                 {userEmail && historyQuery.isLoading && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
                       Loading history...
                     </td>
                   </tr>
                 )}
                 {userEmail && historyQuery.isError && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-destructive">
+                    <td colSpan={8} className="px-4 py-6 text-center text-destructive">
                       {historyQuery.error.message}
                     </td>
                   </tr>
                 )}
                 {userEmail && !historyQuery.isLoading && !historyQuery.isError && history.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-muted-foreground">
+                    <td colSpan={8} className="px-4 py-6 text-center text-muted-foreground">
                       No text verification searches have been stored yet.
                     </td>
                   </tr>
@@ -121,6 +131,7 @@ const DashboardPage = ({ userEmail }: DashboardPageProps) => {
                     <td className="px-4 py-3">{item.verification_rating}</td>
                     <td className="px-4 py-3">{item.statistical_percentage}% ({item.confidence})</td>
                     <td className="px-4 py-3">{formatGrammaticalHistoryScore(item)}</td>
+                    <td className="px-4 py-3">{formatFactCheckingHistoryScore(item)}</td>
                     <td className="px-4 py-3 text-muted-foreground">{new Date(item.created_at).toLocaleString()}</td>
                   </tr>
                 ))}

@@ -8,12 +8,15 @@ from checkwise_stats.text_analysis import run_detection_pipeline
 
 from .db import insert_history_entry
 
+from .fact_checking_agent import fact_check_text  #adaugat
+
 logger = logging.getLogger(__name__)
 
 
 def build_text_verification_result(user_email: str, text: str) -> dict[str, Any]:
     structured_result = run_detection_pipeline(text)
     structured_result["grammatical_result"] = _run_grammatical_agent(text)
+    structured_result["fact_checking_result"] = fact_check_text(text).model_dump()  #adaugat
     document_assessment = structured_result["document_assessment"]
     displayed_percentage = structured_result.get("percentage")
     if isinstance(displayed_percentage, (int, float)):
