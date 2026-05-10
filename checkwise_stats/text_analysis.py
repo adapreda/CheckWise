@@ -21,7 +21,7 @@ WHITESPACE_PATTERN = re.compile(r"\s+")
 BULLET_PATTERN = re.compile(r"^\s*(?:[-*]|\d+[.)])\s+", re.MULTILINE)
 QUOTE_PATTERN = re.compile(r'^[\s>"\']+', re.MULTILINE)
 
-DEFAULT_TEXT_MODEL = os.getenv("CHECKWISE_TEXT_MODEL", os.getenv("CHECKWISE_STATS_MODEL", "gpt-oss:20b-cloud"))
+DEFAULT_TEXT_MODEL = os.getenv("CHECKWISE_TEXT_MODEL", os.getenv("CHECKWISE_STATS_MODEL", "llama3.2:1b"))
 DEFAULT_TEXT_OLLAMA_BASE_URL = os.getenv(
     "CHECKWISE_TEXT_OLLAMA_BASE_URL",
     os.getenv("CHECKWISE_STATS_OLLAMA_BASE_URL", "http://localhost:11434"),
@@ -925,10 +925,8 @@ def _extract_raw_score(raw_text: str) -> float | None:
         match = re.search(pattern, lowered)
         if not match:
             continue
-        value = float(match.group(1))
-        if value > 1.0 and value <= 100.0:
-            value = value / 100.0
-        if 0.0 <= value <= 1.0:
+        value = _normalize_score_value(float(match.group(1)))
+        if value is not None:
             return value
     return None
 
@@ -958,8 +956,34 @@ def _normalize_linguistic_payload(payload: dict[str, Any]) -> dict[str, Any]:
                 normalized[target_key] = []
                 continue
             raise KeyError(target_key)
+        if target_key in {
+            "human_likelihood_score",
+            "natural_wording_score",
+            "expressive_style_score",
+            "coherence_score",
+            "awkwardness_score",
+        }:
+            normalized_score = _normalize_score_value(value)
+            if normalized_score is None:
+                raise ValueError(f"{target_key} must be a numeric score.")
+            normalized[target_key] = normalized_score
+            continue
         normalized[target_key] = value
     return normalized
+
+
+def _normalize_score_value(value: Any) -> float | None:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if 0.0 <= score <= 1.0:
+        return score
+    if 1.0 < score <= 10.0:
+        return score / 10.0
+    if 10.0 < score <= 100.0:
+        return score / 100.0
+    return None
 
 
 def _extract_structured_keys(raw_text: str) -> list[str]:
