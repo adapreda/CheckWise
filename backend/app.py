@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from .fact_checking_agent import FactCheckingResult, fact_check_text #nu stiu daca e bine
+
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -89,6 +91,13 @@ class DetectorDetailsResponse(BaseModel):
     diagnostic_timestamp: str | None = None
 
 
+class GrammaticalResultResponse(BaseModel):
+    score: int = Field(ge=0, le=100)
+    confidence: Literal["low", "medium", "high"]
+    reasons_for_rating: list[str]
+    lowered_confidence_reasons: list[str]
+
+
 class TextVerificationResponse(BaseModel):
     title: str
     verification_title: str
@@ -109,6 +118,9 @@ class TextVerificationResponse(BaseModel):
     detector_details: DetectorDetailsResponse
     highlights: list[HighlightResponse]
     metrics: TextAnalysisMetricsResponse
+    grammatical_result: GrammaticalResultResponse
+    fact_checking_result: dict[str, Any] | None    #adaugat
+    master_result: dict[str, Any]
 
 
 class HistoryEntry(BaseModel):
@@ -143,6 +155,14 @@ def startup_event() -> None:
 @app.get("/api/health")
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
+
+@app.post("/api/fact-check", response_model=FactCheckingResult)   #nu stiu daca e bine
+def fact_check(payload: TextVerificationRequest) -> FactCheckingResult:
+    try:
+        return fact_check_text(payload.text)
+    except Exception as exc:
+        logger.exception("Fact-checking failed for text_length=%s", len(payload.text))
+        raise HTTPException(status_code=500, detail=f"Fact-checking failed: {exc}") from exc
 
 
 @app.post("/api/text/verify", response_model=TextVerificationResponse)
