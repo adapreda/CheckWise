@@ -32,7 +32,7 @@ export const agents = [
     icon: "Brain",
     description: "Combines all agent findings into one confidence verdict.",
     details:
-      "The Orchestrator agent weighs the results from the Statistic, Grammatical, and Fact-Check agents. Using an advanced weighting algorithm, it produces a single confidence percentage that represents the overall likelihood the text was AI-generated.",
+      "The Master Agent receives the Statistic, Grammatical, and Fact-Checking results, converts factual trust into AI suspicion, and averages the available scores into one overall AI-written percentage.",
     color: "from-yellow-400 to-yellow-600",
   },
 ];

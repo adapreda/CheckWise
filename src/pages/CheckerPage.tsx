@@ -16,6 +16,63 @@ const formatVisibleVerdictLabel = (result: TextVerificationResponse) =>
     ? `${result.percentage}% likely AI-written`
     : `${result.percentage}% likely human-written`;
 
+const clampPercentage = (score: number) => Math.max(0, Math.min(100, Math.round(score)));
+
+const formatGrammaticalVerdictLabel = (result: TextVerificationResponse) =>
+  result.verdict === "likely AI-generated"
+    ? `${clampPercentage(result.grammatical_result.score)}% likely AI-written`
+    : `${clampPercentage(100 - result.grammatical_result.score)}% likely human-written`;
+
+const formatFactCheckingScore = (score: number) => `${clampPercentage(score)}%`;
+
+const formatFactCheckingVerdictLabel = (score: number) =>
+  `${clampPercentage(score)}% factual trust`;
+
+const formatMasterVerdictLabel = (score: number | null | undefined) =>
+  typeof score === "number"
+    ? `${clampPercentage(score)}% overall likely AI-written`
+    : "Not enough agent results to calculate an overall AI-written score";
+
+interface GrammaticalSignalSpan {
+  start: number;
+  end: number;
+  reason: string;
+}
+
+const buildGrammaticalSignalSpans = (value: string): GrammaticalSignalSpan[] => {
+  const spans: GrammaticalSignalSpan[] = [];
+
+  const addMatches = (pattern: RegExp, reason: string) => {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(value)) !== null && spans.length < 8) {
+      const start = match.index;
+      const end = start + match[0].length;
+      if (end > start) {
+        spans.push({ start, end, reason });
+      }
+    }
+  };
+
+  addMatches(/\s+[,.!?;:]/g, "Spacing appears before punctuation.");
+  addMatches(/[,.!?;:](?=\S)/g, "Punctuation is followed by no space.");
+  addMatches(/\s{2,}/g, "Repeated spacing affects formatting consistency.");
+  addMatches(/\n{3,}/g, "Large blank gaps affect formatting consistency.");
+  addMatches(/\b\w*(?:aaa|eee|iii|ooo|uuu)\w*\b/gi, "Repeated letters may indicate informal or typo-like wording.");
+
+  const filteredSpans: GrammaticalSignalSpan[] = [];
+  let cursor = 0;
+  [...spans]
+    .sort((a, b) => a.start - b.start)
+    .forEach((span) => {
+      if (span.start >= cursor) {
+        filteredSpans.push(span);
+        cursor = span.end;
+      }
+    });
+
+  return filteredSpans;
+};
+
 interface CheckerPageProps {
   userEmail?: string;
 }
@@ -169,6 +226,49 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
   const visibleVerdictLabel = textVerificationMutation.data
     ? formatVisibleVerdictLabel(textVerificationMutation.data)
     : null;
+  const grammaticalVerdictLabel = textVerificationMutation.data
+    ? formatGrammaticalVerdictLabel(textVerificationMutation.data)
+    : null;
+  const grammaticalResult = textVerificationMutation.data?.grammatical_result ?? null;
+  const factCheckingResult = textVerificationMutation.data?.fact_checking_result ?? null;
+  const masterResult = textVerificationMutation.data?.master_result ?? null;
+  const masterVerdictLabel = masterResult ? formatMasterVerdictLabel(masterResult.score) : null;
+  const grammaticalHighlightedText = useMemo(() => {
+    if (!grammaticalResult) {
+      return null;
+    }
+
+    const spans = buildGrammaticalSignalSpans(text);
+    if (spans.length === 0) {
+      return [text];
+    }
+
+    const nodes: ReactNode[] = [];
+    let cursor = 0;
+
+    spans.forEach((span, index) => {
+      if (span.start > cursor) {
+        nodes.push(<span key={`grammar-plain-${index}-${cursor}`}>{text.slice(cursor, span.start)}</span>);
+      }
+
+      nodes.push(
+        <mark
+          key={`grammar-highlight-${index}-${span.start}`}
+          className="rounded bg-cyan-500/20 px-0.5 text-foreground"
+          title={span.reason}
+        >
+          {text.slice(span.start, span.end)}
+        </mark>,
+      );
+      cursor = span.end;
+    });
+
+    if (cursor < text.length) {
+      nodes.push(<span key={`grammar-plain-final-${cursor}`}>{text.slice(cursor)}</span>);
+    }
+
+    return nodes;
+  }, [text, grammaticalResult]);
 
   const statisticalAgentModalContent = textVerificationMutation.data ? (
     <div className="space-y-4">
@@ -290,6 +390,181 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
         <h3 className="mb-3 text-sm font-semibold text-foreground">Highlighted Signals In The Original Text</h3>
         <div className="whitespace-pre-wrap text-sm leading-7 text-foreground">{highlightedText}</div>
       </div>
+    </div>
+  ) : null;
+
+  const grammaticalAgentModalContent = grammaticalResult ? (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h2 className="mb-2 text-base font-semibold text-foreground">Grammatical Verification Result</h2>
+        <p className="text-sm text-muted-foreground">
+          Result: <span className="font-semibold text-foreground">{grammaticalVerdictLabel}</span>
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Confidence: <span className="font-semibold text-foreground">{grammaticalResult.confidence}</span>
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">Why this text received this rating</h3>
+        <div className="space-y-2 text-sm leading-7 text-muted-foreground">
+          {grammaticalResult.reasons_for_rating.map((reason, index) => (
+            <p key={`${reason}-${index}`}>- {reason}</p>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">What lowered confidence</h3>
+        <div className="space-y-2 text-sm leading-7 text-muted-foreground">
+          {grammaticalResult.lowered_confidence_reasons.length > 0 ? (
+            grammaticalResult.lowered_confidence_reasons.map((item, index) => (
+              <p key={`${item}-${index}`}>- {item}</p>
+            ))
+          ) : (
+            <p>- No major confidence reducers were reported.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">Highlighted Signals In The Original Text</h3>
+        <div className="whitespace-pre-wrap text-sm leading-7 text-foreground">{grammaticalHighlightedText}</div>
+      </div>
+    </div>
+  ) : null;
+
+  const factCheckingAgentModalContent = factCheckingResult ? (
+    <div className="max-w-full space-y-4 overflow-x-hidden whitespace-normal break-words [overflow-wrap:anywhere] [word-break:break-word]">
+      <div className="max-w-full overflow-x-hidden rounded-lg border border-border bg-background/40 p-4">
+        <h2 className="mb-2 text-base font-semibold text-foreground">Fact-Checking Verification Result</h2>
+        <p className="text-sm text-muted-foreground">
+          Result: <span className="font-semibold text-foreground">{formatFactCheckingVerdictLabel(factCheckingResult.overall_trust_score)}</span>
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Lower factual trust can increase AI suspicion.
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Confidence: <span className="font-semibold text-foreground">{formatFactCheckingScore(factCheckingResult.overall_confidence_score)}</span>
+        </p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Claims checked: <span className="font-semibold text-foreground">{factCheckingResult.total_claims}</span>
+        </p>
+      </div>
+
+      {factCheckingResult.claims.length > 0 ? (
+        <div className="space-y-3">
+          {factCheckingResult.claims.map((claim, index) => (
+            <div key={`${claim.claim}-${index}`} className="max-w-full overflow-x-hidden rounded-lg border border-border bg-background/40 p-4">
+              <div className="mb-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <h3 className="whitespace-normal break-words text-sm font-semibold text-foreground [overflow-wrap:anywhere] [word-break:break-word]">{claim.claim}</h3>
+                  <p className="mt-1 whitespace-normal break-words text-xs text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">{claim.type.replaceAll("_", " ")}</p>
+                </div>
+                <span className="w-fit rounded-md border border-border px-2 py-1 text-xs font-semibold text-foreground">
+                  {claim.verdict.replaceAll("_", " ")}
+                </span>
+              </div>
+
+              <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                <p>
+                  Claim score: <span className="font-semibold text-foreground">{formatFactCheckingScore(claim.claim_score)}</span>
+                </p>
+                <p>
+                  Confidence: <span className="font-semibold text-foreground">{formatFactCheckingScore(claim.confidence_score)}</span>
+                </p>
+              </div>
+
+              <p className="mt-3 whitespace-normal break-words text-sm leading-7 text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">{claim.explanation}</p>
+
+              {claim.sources.length > 0 && (
+                <div className="mt-4 max-w-full space-y-2 overflow-x-hidden">
+                  <h4 className="text-sm font-semibold text-foreground">Sources</h4>
+                  {claim.sources.map((source, sourceIndex) => (
+                    <div key={`${source.url}-${sourceIndex}`} className="max-w-full overflow-x-hidden rounded-md border border-border bg-background/40 p-3">
+                      <a
+                        href={source.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block max-w-full whitespace-normal break-words text-sm font-semibold text-foreground [overflow-wrap:anywhere] [word-break:break-word] hover:text-primary"
+                      >
+                        {source.title}
+                      </a>
+                      <p className="mt-1 max-w-full whitespace-normal break-words text-xs text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">
+                        Credibility: {source.credibility_score.toFixed(2)}
+                      </p>
+                      <p className="mt-2 max-w-full whitespace-normal break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere] [word-break:break-word]">{source.snippet}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border bg-background/40 p-4">
+          <p className="text-sm text-muted-foreground">No factual claims were found for fact-checking.</p>
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const masterAgentModalContent = masterResult ? (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h2 className="mb-2 text-base font-semibold text-foreground">{masterResult.title}</h2>
+        <p className="text-sm text-muted-foreground">
+          Result: <span className="font-semibold text-foreground">{masterVerdictLabel}</span>
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">Scores used by the Master Agent</h3>
+        <div className="space-y-3 text-sm text-muted-foreground">
+          {masterResult.details.scores.map((scoreDetail) => (
+            <div key={scoreDetail.agent} className="rounded-md border border-border bg-background/40 p-3">
+              <p className="font-semibold text-foreground">{scoreDetail.label}</p>
+              <p className="mt-1">
+                Score: <span className="font-semibold text-foreground">
+                  {scoreDetail.score === null ? "Missing" : `${clampPercentage(scoreDetail.score)}%`}
+                </span>
+              </p>
+              {scoreDetail.agent === "fact_checking" && scoreDetail.original_score !== null && (
+                <p className="mt-1">
+                  Factual trust conversion: <span className="font-semibold text-foreground">
+                    100 - {clampPercentage(scoreDetail.original_score)} = {scoreDetail.score === null ? "Missing" : clampPercentage(scoreDetail.score)}
+                  </span>
+                </p>
+              )}
+              <p className="mt-1">{scoreDetail.explanation}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border bg-background/40 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-foreground">Calculation</h3>
+        <div className="space-y-2 text-sm leading-7 text-muted-foreground">
+          <p>Fact-check conversion: {masterResult.details.fact_check_conversion}</p>
+          <p>Averaging formula: {masterResult.details.average_formula}</p>
+          <p>
+            Final rounded result: <span className="font-semibold text-foreground">
+              {masterResult.details.final_rounded_result === null
+                ? "Not available"
+                : `${masterResult.details.final_rounded_result}% overall likely AI-written`}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      {masterResult.missing_agents.length > 0 && (
+        <div className="rounded-lg border border-border bg-background/40 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">Missing agent results</h3>
+          <p className="text-sm text-muted-foreground">
+            {masterResult.missing_agents.join(", ")}
+          </p>
+        </div>
+      )}
     </div>
   ) : null;
 
@@ -416,7 +691,17 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
               index={i}
               isOpen={openAgent === agent.id}
               onToggle={() => setOpenAgent(openAgent === agent.id ? null : agent.id)}
-              modalContent={agent.id === "statistic" ? statisticalAgentModalContent : undefined}
+              modalContent={
+                agent.id === "statistic"
+                  ? statisticalAgentModalContent
+                  : agent.id === "grammatical"
+                    ? grammaticalAgentModalContent
+                    : agent.id === "factcheck"
+                      ? factCheckingAgentModalContent
+                      : agent.id === "orchestrator"
+                        ? masterAgentModalContent
+                        : undefined
+              }
             />
           ))}
         </div>
@@ -449,6 +734,45 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
                   Open the <span className="font-semibold text-foreground">Statistic Agent</span> card above to view the full analysis details.
                 </p>
               </div>
+
+              {grammaticalResult && (
+                <div className="rounded-lg border border-border bg-card p-5">
+                  <h2 className="mb-2 text-lg font-semibold">Grammatical Verification Result</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Result: <span className="font-semibold text-foreground">{grammaticalVerdictLabel}</span>
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Open the <span className="font-semibold text-foreground">Grammatical Agent</span> card above to view the full analysis details.
+                  </p>
+                </div>
+              )}
+
+              {factCheckingResult && (
+                <div className="rounded-lg border border-border bg-card p-5">
+                  <h2 className="mb-2 text-lg font-semibold">Fact-Checking Verification Result</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Result: <span className="font-semibold text-foreground">{formatFactCheckingVerdictLabel(factCheckingResult.overall_trust_score)}</span>
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Lower factual trust can increase AI suspicion.
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Open the <span className="font-semibold text-foreground">Fact-Checking Agent</span> card above to view checked claims and sources.
+                  </p>
+                </div>
+              )}
+
+              {masterResult && (
+                <div className="rounded-lg border border-border bg-card p-5">
+                  <h2 className="mb-2 text-lg font-semibold">{masterResult.title}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Result: <span className="font-semibold text-foreground">{masterVerdictLabel}</span>
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Open the <span className="font-semibold text-foreground">Master Agent</span> card above to view how the result was calculated.
+                  </p>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

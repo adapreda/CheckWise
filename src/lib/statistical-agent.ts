@@ -68,6 +68,70 @@ export interface DetectorDetails {
   diagnostic_timestamp?: string | null;
 }
 
+export interface GrammaticalResult {
+  score: number;
+  confidence: "low" | "medium" | "high";
+  reasons_for_rating: string[];
+  lowered_confidence_reasons: string[];
+}
+
+export interface SourceEvidence {
+  title: string;
+  url: string;
+  credibility_score: number;
+  snippet: string;
+}
+
+export interface FactCheckedClaim {
+  claim: string;
+  type: string;
+  queries: string[];
+  verdict: "VERIFIED" | "LIKELY_TRUE" | "CONTRADICTED" | "OUTDATED" | "UNVERIFIABLE";
+  claim_score: number;
+  confidence_score: number;
+  sources: SourceEvidence[];
+  explanation: string;
+}
+
+export interface FactCheckingResult {
+  agent: "fact_checking";
+  overall_trust_score: number;
+  overall_confidence_score: number;
+  total_claims: number;
+  claims: FactCheckedClaim[];
+}
+
+export interface MasterScoreDetail {
+  agent: string;
+  label: string;
+  score: number | null;
+  original_score: number | null;
+  used: boolean;
+  source_field: string;
+  explanation: string;
+}
+
+export interface MasterResult {
+  agent: "master";
+  title: string;
+  model: string;
+  score: number | null;
+  raw_score: number | null;
+  label: string;
+  available: boolean;
+  used_agents: string[];
+  missing_agents: string[];
+  formula: string;
+  details: {
+    scores: MasterScoreDetail[];
+    fact_check_conversion: string;
+    average_formula: string;
+    final_rounded_result: number | null;
+    missing_agents: string[];
+    note: string;
+  };
+}
+
 export interface TextVerificationResponse {
   title: string;
   verification_title: string;
@@ -88,6 +152,9 @@ export interface TextVerificationResponse {
   detector_details: DetectorDetails;
   highlights: Highlight[];
   metrics: TextAnalysisMetrics;
+  grammatical_result: GrammaticalResult;
+  fact_checking_result?: FactCheckingResult | null;
+  master_result?: MasterResult | null;
 }
 
 export interface HistoryEntry {
