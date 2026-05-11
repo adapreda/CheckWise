@@ -6,3 +6,4 @@ scipy
 statsmodels
 langgraph
 uvicorn
+trafilatura

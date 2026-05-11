@@ -171,15 +171,25 @@ const CheckerPage = ({ userEmail }: CheckerPageProps) => {
     }
   };
 
-  const handleUrlSubmit = () => {
-    if (!url.trim() || urlLoading) return;
+const handleUrlSubmit = async () => {
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl || urlLoading) return;
+  if (!trimmedUserEmail) {
+    setUrlStatus("Please sign in before verifying a URL.");
+    return;
+  }
+  try {
     setUrlLoading(true);
-    setUrlStatus(null);
-    setTimeout(() => {
-      setUrlStatus("URL verification is not connected to the backend yet.");
-      setUrlLoading(false);
-    }, 1200);
-  };
+    setUrlStatus("Fetching and analyzing content from URL...");
+    await textVerificationMutation.mutateAsync({ text: trimmedUrl });
+    setUrlStatus("Analysis complete!");
+  } catch (error: any) {
+    setUrlStatus(`Error: ${error.message}`);
+    console.error("URL Submit Error:", error);
+  } finally {
+    setUrlLoading(false);
+  }
+};
 
   const highlightedText = useMemo(() => {
     const result = textVerificationMutation.data;

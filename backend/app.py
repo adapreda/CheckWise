@@ -4,13 +4,14 @@ from .fact_checking_agent import FactCheckingResult, fact_check_text #nu stiu da
 
 import logging
 from typing import Any, Literal
-
+import re
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .db import fetch_history_for_user, init_db
 from .services import build_text_verification_result
+import trafilatura
 
 logger = logging.getLogger(__name__)
 
@@ -165,13 +166,63 @@ def fact_check(payload: TextVerificationRequest) -> FactCheckingResult:
         raise HTTPException(status_code=500, detail=f"Fact-checking failed: {exc}") from exc
 
 
+# @app.post("/api/text/verify", response_model=TextVerificationResponse)
+# def verify_text(payload: TextVerificationRequest) -> TextVerificationResponse:
+#     if payload.input_type != "text":
+#         raise HTTPException(status_code=400, detail="Only text verification is supported by this endpoint.")
+
+#     try:
+#         result = build_text_verification_result(user_email=payload.user_email, text=payload.text)
+#         return TextVerificationResponse(**result)
+#     except ValueError as exc:
+#         raise HTTPException(status_code=400, detail=str(exc)) from exc
+#     except Exception as exc:
+#         logger.exception(
+#             "Text verification failed for user_email=%s text_length=%s",
+#             payload.user_email,
+#             len(payload.text),
+#         )
+#         raise HTTPException(status_code=500, detail=f"Text verification failed: {exc}") from exc
+def sanitize_extracted_text(text: str) -> str:
+    """Curăță textul extras pentru a preveni erorile de parsare JSON în agenți."""
+    if not text:
+        return ""
+    # Eliminăm caracterele de control (ASCII 0-31)
+    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', text)
+    # Înlocuim ghilimelele duble cu simple pentru a nu sparge JSON-ul generat de LLM
+    text = text.replace('"', "'").replace('“', "'").replace('”', "'")
+    # Consolidăm spațiile albe
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
 @app.post("/api/text/verify", response_model=TextVerificationResponse)
 def verify_text(payload: TextVerificationRequest) -> TextVerificationResponse:
-    if payload.input_type != "text":
-        raise HTTPException(status_code=400, detail="Only text verification is supported by this endpoint.")
+    is_url = payload.input_type == "url" or payload.text.strip().startswith(("http://", "https://"))
+    final_text = payload.text
+    
+    if is_url:
+        try:
+            downloaded = trafilatura.fetch_url(payload.text.strip())
+            extracted = trafilatura.extract(downloaded)
+            
+            if not extracted:
+                raise HTTPException(status_code=400, detail="Nu am putut extrage text util de la acest URL.")
+            
+            # Sanitizăm textul extras
+            sanitized = sanitize_extracted_text(extracted)
+            
+            # Limităm lungimea la ~3500 caractere pentru a evita tăierea răspunsului JSON de către AI
+            final_text = sanitized[:3500]
+            
+            print(f"DEBUG: Text extras și sanitizat (lungime {len(final_text)})")
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Eroare la procesarea URL-ului: {str(e)}")
 
     try:
-        result = build_text_verification_result(user_email=payload.user_email, text=payload.text)
+        result = build_text_verification_result(user_email=payload.user_email, text=final_text)
         return TextVerificationResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -179,11 +230,10 @@ def verify_text(payload: TextVerificationRequest) -> TextVerificationResponse:
         logger.exception(
             "Text verification failed for user_email=%s text_length=%s",
             payload.user_email,
-            len(payload.text),
+            len(final_text),
         )
         raise HTTPException(status_code=500, detail=f"Text verification failed: {exc}") from exc
-
-
+    
 @app.get("/api/history", response_model=list[HistoryEntry])
 def get_history(user_email: str = Query(min_length=3)) -> list[HistoryEntry]:
     entries = fetch_history_for_user(user_email)
