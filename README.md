@@ -1,62 +1,173 @@
 # CheckWise
 
-<<<<<<< HEAD
-Multi-agent framework for high-precision content forensics. Uses a hybrid architecture of cloud-based web grounding and local statistical analysis to detect machine-generated patterns, rhythmic monotony, and factual hallucinations.
-=======
-CheckWise is the existing Vite/React UI for AI-generated text detection.
+CheckWise is a multi-agent content forensics application that analyzes whether a text or webpage appears to be AI-written.
 
-## Statistical Agent
+The application does not try to give a definitive verdict about authorship. Instead, it combines several types of signals — statistical writing patterns, grammar and polish indicators, factual claim checking, and an overall master score — to help users better understand the nature of a text.
 
-The repository now includes a Python statistical agent in [`checkwise_stats/`](./checkwise_stats) and a minimal backend API in [`backend/`](./backend). The intended application path is now:
+CheckWise is designed as a structured decision aid: it highlights relevant parts of the text, explains suspicious patterns, and presents the result through multiple specialized analysis agents.
 
-1. frontend sends a statistical question and dataset to `/api/statistics/analyze`
-2. FastAPI backend receives the request
-3. backend calls the LangGraph statistical agent
-4. frontend renders the returned answer and structured results inside the existing checker page
+---
 
-### What it does
+## About the Project
 
-- Accepts a user question plus a pandas `DataFrame` or file-backed dataset
-- Uses LangGraph with these nodes:
-  - `parse_request`
-  - `inspect_data`
-  - `select_method`
-  - `run_analysis`
-  - `explain_results`
-- Uses `ChatOllama(model="gpt-oss:20b", base_url="http://localhost:11434", temperature=0)`
-- Uses the LLM only for intent detection and explanation
-- Runs deterministic Python code for descriptive statistics, Welch t-tests, and chi-square tests
+AI-generated content is increasingly common, but detecting it reliably is difficult. A simple percentage is often not enough, because users also need to understand why a text may look artificial, overly polished, repetitive, or factually uncertain.
 
-### Install Python dependencies
+CheckWise approaches this problem through a multi-agent system. Each agent focuses on a different aspect of the text, and the final result is obtained by combining their individual analyses.
 
-```bash
-pip install -r requirements-statistical-agent.txt
+The project supports both pasted text and webpage analysis. For webpages, the backend extracts the article content and then sends it through the same verification pipeline.
+
+---
+
+## Main Features
+
+CheckWise provides:
+
+- analysis for pasted text;
+- analysis for webpage URLs;
+- highlighted explanatory text spans;
+- separate results from multiple agents;
+- an overall AI-written likelihood score;
+- factual claim extraction and verification;
+- verification history saved per user;
+- optional support for local and external AI models;
+- fallback behavior when optional services are unavailable.
+
+---
+
+## How the Analysis Works
+
+The verification process is divided into four main agents.
+
+### Statistic Agent
+
+The Statistic Agent analyzes measurable writing patterns such as sentence variation, linking-word repetition, linguistic style, robustness, and statistical AI-likelihood indicators.
+
+This helps identify texts that may have overly regular rhythm, repetitive structure, or stylistic patterns commonly associated with generated content.
+
+### Grammatical Agent
+
+The Grammatical Agent evaluates spelling, punctuation, formatting consistency, and overall polish.
+
+Very clean or uniform writing is not necessarily AI-generated, but it can contribute to the final analysis when combined with other signals.
+
+### Fact-Checking Agent
+
+The Fact-Checking Agent extracts factual claims from the text and evaluates how trustworthy they appear based on available evidence.
+
+When external services are configured, the agent can use Gemini and Tavily for richer fact-checking. Otherwise, the application uses safe fallback results.
+
+### Master Agent
+
+The Master Agent combines the available agent scores into one final AI-written percentage.
+
+This final score is meant to summarize the analysis, while the individual agent cards provide more detailed explanations.
+
+---
+
+## Application Flow
+
+```text
+User enters text or URL
+        |
+        v
+Frontend sends the request to the backend
+        |
+        v
+Backend extracts and prepares the content
+        |
+        v
+Specialized agents analyze the text
+        |
+        v
+Master Agent combines the results
+        |
+        v
+Frontend displays the verdict, highlights, and history
 ```
 
-### Run the full app integration
+## Technologies Used
 
-```bash
-pip install -r requirements-statistical-agent.txt
-npm run backend
-npm run dev
+### Frontend
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Radix UI primitives
+- TanStack Query
+- Framer Motion
+- Recharts
+- Vitest
+
+### Backend
+
+- FastAPI
+- Uvicorn
+- LangGraph
+- LangChain
+- Ollama integration
+- SQLite
+- Pandas
+- SciPy
+- Statsmodels
+- Trafilatura
+- Requests
+
+---
+
+## Project Structure
+
+```text
+.
+|-- backend/              # FastAPI backend and analysis agents
+|-- checkwise_stats/      # Statistical analysis pipeline and CLI experiments
+|-- src/                  # React frontend
+|-- tests/                # Python tests
+|-- package.json          # Frontend scripts and dependencies
+|-- requirements-statistical-agent.txt
+`-- vite.config.ts        # Vite configuration and API proxy
 ```
 
-The frontend runs on `http://localhost:8080` and proxies `/api` requests to the Python backend on `http://localhost:8000`.
+## Running the Project Locally
 
-### Optional CLI testing
+### Requirements
 
-```bash
-python -m checkwise_stats.cli --question "Describe the age column" --data path/to/data.csv --show-state
-```
+Before running the project, make sure you have:
 
-The CLI remains available for local testing only. It is no longer the main integration path for the app.
+- Node.js 18+ or 20+
+- npm
+- Python 3.10+
 
-### End-to-end test
+Optional:
 
-1. Start Ollama and confirm `gpt-oss:20b` is available on `http://localhost:11434`
-2. Start the backend with `npm run backend`
-3. Start the frontend with `npm run dev`
-4. Sign in through the existing auth page
-5. On the checker page, use the new Statistical Agent panel
-6. Try one of the suggested questions such as `Compare score between the control and treatment groups.`
->>>>>>> 7ac1a21 (Adaug agentul statistic)
+- Ollama, for local model-based analysis;
+- Gemini API key, for advanced claim extraction and evaluation;
+- Tavily API key, for evidence search.
+
+The project still works without these optional services, but some agents will use fallback results.
+
+## Notes and Limitations
+
+CheckWise produces probabilistic signals, not definitive proof of authorship.
+
+AI detection is inherently uncertain, especially for:
+
+- short texts;
+- heavily edited texts;
+- translated or paraphrased content;
+- quoted material;
+- bullet-heavy content;
+- non-English prose;
+- texts intentionally rewritten to appear more human.
+
+The result should be interpreted as an analytical aid, not as a final judgment.
+
+---
+
+## Purpose of the Project
+
+The main purpose of CheckWise is to provide a clearer and more transparent way of analyzing suspicious text.
+
+Instead of only returning a score, the application explains the result through several perspectives: statistical structure, grammar and polish, factual reliability, and final score aggregation.
+
+This makes the project useful not only as an AI-detection prototype, but also as an educational tool for understanding how different signals can contribute to content analysis.
